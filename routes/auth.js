@@ -3,6 +3,7 @@ var config = require('../utils/config')(),
     moment = require('moment'),
     jwt = require('jsonwebtoken'),
     request = require('request'),
+    crypto = require('crypto'),
     router = require('express').Router(),
     mailUtils = require('../utils/mail'),
     HttpError = require('../utils/general').HttpError,
@@ -275,6 +276,47 @@ router.post(
           .then(() => res.status(204).send());
       })
       .catch(err => next(err));
+  }
+);
+
+router.get(
+  '/s3',
+  (req, res, next) => {
+    var policy = null;
+
+    res.status(200).json({
+      policy: createPolicy(),
+      signature: createSignature(),
+      key: config.auth.aws.accessKeyID
+    });
+
+    function createPolicy() {
+      var newPolicy = {
+        expiration: moment().add(1, 'hours').format(),
+        conditions: [
+          { bucket: config.auth.aws.s3bucket },
+          ['starts-with', '$key', ''],
+          { acl: 'public-read' },
+          ['starts-with', '$Content-Type', ''],
+          ['content-length-range', 0, 10 * 1024 * 1024]
+        ]
+      };
+      console.log('policy', newPolicy);
+
+      policy = policy || new Buffer(JSON.stringify(newPolicy)).toString('base64');
+
+      return policy;
+    }
+
+    function createSignature() {
+      // var hash = crypto.createHmac('sha1', config.auth.aws.secretAccessKey).update(createPolicy()).digest('hex');
+      var hmac = crypto.createHmac('sha1', config.auth.aws.secretAccessKey);
+      hmac.setEncoding('hex');
+      hmac.write(createPolicy());
+      hmac.end();
+
+      return new Buffer(hmac.read()).toString('base64');
+    }
   }
 );
 
